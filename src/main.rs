@@ -90,17 +90,14 @@ fn get_object_code(base: usize, pc: usize, global_map: &GlobalMap, asm_line: &AS
     let address_spec = &asm_line.address_spec;
     let mut base = base;
     let mut nixbpe = Nixbpe::new();
-    let mut opcode_code = String::new();
-    let mut address_code = String::new();
+    let opcode_code: String;
+    let address_code: String;
     let (code_len, address_len) = match &opcode_spec {
         ParseOpcodeReturn::Directive(_) => {
             (0, 12)
         }
         ParseOpcodeReturn::Opcode(_, format) => {
             match format {
-                OpcodeFormat::None => {
-                    panic!("what?")
-                }
                 OpcodeFormat::One => {
                     (8, 0)
                 }
@@ -180,7 +177,7 @@ fn get_object_code(base: usize, pc: usize, global_map: &GlobalMap, asm_line: &AS
                 }
             }
         }
-        ParseAddressReturn::Literal(literal) => {
+        ParseAddressReturn::Literal(_) => {
             todo!("Add literal logic")
         }
         ParseAddressReturn::Constant(constant) => {
@@ -215,15 +212,15 @@ fn get_object_code(base: usize, pc: usize, global_map: &GlobalMap, asm_line: &AS
             if directive == "BYTE" {
                 return (Some(address_code), base);
             }
+            if directive == "WORD" {
+                return (Some(i32_to_hex_string(bin_string_to_i32(address_code), 6)), base);
+            }
             return (None, base);
         }
         ParseOpcodeReturn::Opcode(opcode, format) => {
             let opcode_detail = global_map.get_opcode_value(opcode);
             let opcode = opcode_detail.opcode;
             match format {
-                OpcodeFormat::None => {
-                    panic!("What?")
-                }
                 OpcodeFormat::Four => {
                     nixbpe.set_extended();
                     opcode_code = i32_to_bin_string((opcode >> 2) as i32, 6);
@@ -232,7 +229,6 @@ fn get_object_code(base: usize, pc: usize, global_map: &GlobalMap, asm_line: &AS
                     opcode_code = i32_to_bin_string((opcode >> 2) as i32, 6);
                 }
                 OpcodeFormat::Two => {
-                    opcode_code = i32_to_bin_string(opcode as i32, 8);
                     return (Some((i32_to_hex_string(opcode as i32, 2)) + i32_to_hex_string(bin_string_to_i32(address_code), 2).as_str()), base);
                 }
                 OpcodeFormat::One => {
@@ -264,17 +260,10 @@ enum AddressingModes {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum OpcodeFormat {
-    None,
     One,
     Two,
     Three,
     Four,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum OpcodeModifier {
-    Fourth,
-    None,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -546,9 +535,6 @@ fn get_loc_inc(opcode_spec: &ParseOpcodeReturn, address_specs: &ParseAddressRetu
         }
         ParseOpcodeReturn::Opcode(_, format) => {
             match format {
-                OpcodeFormat::None => {
-                    panic!("Cannot parse none as opcode format");
-                }
                 OpcodeFormat::One => {
                     1
                 }
@@ -586,11 +572,9 @@ fn parse_address(global_map: &GlobalMap, address: String) -> ParseAddressReturn 
         let r2 = comma_splitter_address[1];
         if global_map.register_map.contains_key(r1) {
             address = i32_to_hex_string(global_map.get_reg_value(r1), 0) + &*i32_to_hex_string(global_map.get_reg_value(r2), 0);
-            return ParseAddressReturn::Address(string_to_usize(&address), AddressingModes::None);
+            ParseAddressReturn::Address(string_to_usize(&address), AddressingModes::None)
         } else if r2 == "X" {
-            addressing_mode = AddressingModes::Indexed;
-            // address = address.chars().enumerate().filter(|x| { x.0 <= address.len() - 2 }).map(|x| x.1).collect();
-            return label_or_address(global_map, &(r1.to_string()), AddressingModes::Indexed);
+            label_or_address(global_map, &(r1.to_string()), AddressingModes::Indexed)
         } else {
             panic!("Invalid address {}", address)
         }
