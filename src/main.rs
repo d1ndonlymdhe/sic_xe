@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::env;
 
 use crate::global_map::*;
 use crate::parse_utils::*;
@@ -10,8 +11,14 @@ mod nixbpe;
 mod parse_utils;
 
 fn main() {
+    
+    let args: Vec<String> = env::args().collect();
+    if args.len() != 2 {
+        panic!("Usage: ./sic_xe_assembler <filename>")
+    }
+    let filename = &args[1];
     let mut global_map = GlobalMap::init();
-    let file = File::open("./src.sic").expect("Unable to open file");
+    let file = File::open(filename).expect("Unable to open file");
     let lines = BufReader::new(file).lines();
     let mut loc = 0;
     let mut loc_inc = 0;
