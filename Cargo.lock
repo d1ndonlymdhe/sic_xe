@@ -3,5 +3,5 @@
 version = 3
 
 [[package]]
-name = "sic_v3"
+name = "sic_xe_assembler"
 version = "0.1.0"
