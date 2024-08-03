@@ -2,7 +2,6 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 
 use crate::global_map::*;
-use crate::utils::*;
 use crate::parse_utils::*;
 
 mod utils;
@@ -16,7 +15,6 @@ fn main() {
     let lines = BufReader::new(file).lines();
     let mut loc = 0;
     let mut loc_inc = 0;
-    let mut base = 0;
     let mut asm_lines: Vec<ASMLine> = Vec::new();
 
     //PASS 1
@@ -26,7 +24,6 @@ fn main() {
         let opcode = line_parts[1];
         let address = line_parts[2];
 
-        println!("line {} :", line.0);
         let address_spec = if !address.is_empty() {
             parse_address(&global_map, address.to_string())
         } else {
@@ -38,7 +35,6 @@ fn main() {
             panic!("No opcode")
         };
         loc += loc_inc;
-        println!("LOC: {}", i32_to_hex_string(loc as i32, 0));
         if line.0 == 1 {
             if let OpcodeSpec::Directive(directive) = &opcode_spec {
                 if directive == "START" {
@@ -64,27 +60,28 @@ fn main() {
             }
         }
         let asm_line = ASMLine {
-            pc: loc,
             opcode_spec: opcode_spec.clone(),
             address_spec: address_spec.clone(),
         };
         asm_lines.push(asm_line);
     }
-    println!("{:#?}", global_map);
 
     //PASS 2
-    for idx in 0..asm_lines.len() - 1 {
-        let line = &asm_lines[idx];
-        let next_line = &asm_lines[idx + 1];
-        let next_pc = next_line.pc;
-        let (object_code, new_base) = get_object_code(base, next_pc, &global_map, line);
+    let mut base = 0;
+    let mut pc = 0;
+
+    for line in asm_lines.iter().take(asm_lines.len() - 1).enumerate() {
+        let idx = line.0;
+        let line = line.1;
+        let (object_code, new_base, new_pc) = get_object_code(base, pc, &global_map, line);
         base = new_base;
+        pc = new_pc;
         match &object_code {
             None => {
-                println!("line {} Object code: None", idx + 1);
+                println!("Line : {} Object code: None", idx + 1);
             }
             Some(object_code) => {
-                println!("line {} Object code: {}", idx + 1, object_code);
+                println!("Line : {} Object code: {}", idx + 1, object_code);
             }
         }
     }
