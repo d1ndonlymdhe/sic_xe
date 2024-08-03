@@ -71,7 +71,7 @@ fn main() {
         let line = &asm_lines[idx];
         let next_line = &asm_lines[idx + 1];
         let next_pc = next_line.pc;
-        let (object_code, new_base) = get_object_code(base, next_pc, &global_map, &line);
+        let (object_code, new_base) = get_object_code(base, next_pc, &global_map, line);
         base = new_base;
         match &object_code {
             None => {
@@ -140,14 +140,14 @@ fn get_object_code(base: usize, pc: usize, global_map: &GlobalMap, asm_line: &AS
             let label_loc = global_map.label_map.get(label).unwrap_or_else(|| panic!("Invalid label {}", label));
             if !is_extended {
                 let mut disp = *label_loc as i32 - pc as i32;
-                if disp >= -2048 && disp <= 2047 {
+                if (-2048..=2047).contains(&disp) {
                     nixbpe.set_pc_relative();
                     if disp < 0 {
-                        disp = 4096 + disp;
+                        disp += 4096;
                     }
                 } else {
                     disp = *label_loc as i32 - base as i32;
-                    if disp >= 0 && disp < 4096 {
+                    if (0..4096).contains(&disp) {
                         nixbpe.set_base_relative();
                         disp = *label_loc as i32 - base as i32;
                     } else {
@@ -197,7 +197,7 @@ fn get_object_code(base: usize, pc: usize, global_map: &GlobalMap, asm_line: &AS
         }
     }
 
-    match opcode_spec {
+    return match opcode_spec {
         ParseOpcodeReturn::Directive(directive) => {
             if directive == "BASE" {
                 if let ParseAddressReturn::Label(label, _) = address_spec {
@@ -215,7 +215,7 @@ fn get_object_code(base: usize, pc: usize, global_map: &GlobalMap, asm_line: &AS
             if directive == "WORD" {
                 return (Some(i32_to_hex_string(bin_string_to_i32(address_code), 6)), base);
             }
-            return (None, base);
+            (None, base)
         }
         ParseOpcodeReturn::Opcode(opcode, format) => {
             let opcode_detail = global_map.get_opcode_value(opcode);
@@ -224,22 +224,24 @@ fn get_object_code(base: usize, pc: usize, global_map: &GlobalMap, asm_line: &AS
                 OpcodeFormat::Four => {
                     nixbpe.set_extended();
                     opcode_code = i32_to_bin_string((opcode >> 2) as i32, 6);
+                    let object_code = i32_to_hex_string(bin_string_to_i32(opcode_code + nixbpe.as_bin_string().as_str() + &*address_code), code_len / 4);
+                    (Some(object_code), base)
                 }
                 OpcodeFormat::Three => {
                     opcode_code = i32_to_bin_string((opcode >> 2) as i32, 6);
+                    let object_code = i32_to_hex_string(bin_string_to_i32(opcode_code + nixbpe.as_bin_string().as_str() + &*address_code), code_len / 4);
+                    (Some(object_code), base)
                 }
                 OpcodeFormat::Two => {
-                    return (Some((i32_to_hex_string(opcode as i32, 2)) + i32_to_hex_string(bin_string_to_i32(address_code), 2).as_str()), base);
+                    (Some((i32_to_hex_string(opcode as i32, 2)) + i32_to_hex_string(bin_string_to_i32(address_code), 2).as_str()), base)
                 }
                 OpcodeFormat::One => {
-                    return (Some(i32_to_hex_string(opcode as i32, 2)), base)
+                    (Some(i32_to_hex_string(opcode as i32, 2)), base)
                 }
             }
         }
     }
 
-    let object_code = i32_to_hex_string(bin_string_to_i32(opcode_code + nixbpe.as_bin_string().as_str() + &*address_code), code_len / 4);
-    return (Some(object_code), base);
 }
 
 
@@ -276,12 +278,12 @@ impl OpcodeDetail {
         Self { opcode, format }
     }
 }
+
 #[derive(Clone, Debug, PartialEq)]
 enum Constant {
     String(String),
     Hex(i32),
 }
-
 
 #[derive(Debug)]
 struct GlobalMap {
@@ -397,7 +399,6 @@ impl GlobalMap {
     }
 }
 
-
 #[derive(Clone, Debug)]
 enum ParseAddressReturn {
     Address(usize, AddressingModes),
@@ -406,13 +407,11 @@ enum ParseAddressReturn {
     Constant(Constant),
 }
 
-
 #[derive(Clone, Debug)]
 enum ParseOpcodeReturn {
     Directive(String),
     Opcode(String, OpcodeFormat),
 }
-
 
 struct Nixbpe {
     n: bool,
@@ -483,7 +482,6 @@ fn parse_opcode(global_map: &GlobalMap, opcode: String) -> ParseOpcodeReturn {
         ParseOpcodeReturn::Opcode(opcode, opcode_format)
     };
 }
-
 
 fn get_loc_inc(opcode_spec: &ParseOpcodeReturn, address_specs: &ParseAddressReturn) -> usize {
     return match opcode_spec {
@@ -566,7 +564,7 @@ fn get_nth_char(word: impl Into<String>, n: usize) -> Result<char, String> {
 fn parse_address(global_map: &GlobalMap, address: String) -> ParseAddressReturn {
     let mut addressing_mode = AddressingModes::Direct;
     let mut address = address;
-    let comma_splitter_address: Vec<&str> = address.split(",").collect();
+    let comma_splitter_address: Vec<&str> = address.split(',').collect();
     if comma_splitter_address.len() == 2 {
         let r1 = comma_splitter_address[0];
         let r2 = comma_splitter_address[1];
@@ -644,7 +642,6 @@ fn is_valid_decimal_string(bin_string: impl Into<String>) -> bool {
     bin_string.into().parse::<i32>().is_ok()
 }
 
-
 fn hex_string_to_i32(hex_string: String) -> i32 {
     i32::from_str_radix(&hex_string, 16).unwrap_or_else(|_| panic!("Invalid hex string {}", hex_string))
 }
@@ -654,7 +651,7 @@ fn i32_to_hex_string(val: i32, len: usize) -> String {
     while t.len() < len {
         t = format!("0{}", t);
     };
-    return t;
+    t
 }
 
 fn i32_to_bin_string(val: i32, len: usize) -> String {
@@ -662,7 +659,7 @@ fn i32_to_bin_string(val: i32, len: usize) -> String {
     while t.len() < len {
         t = format!("0{}", t);
     }
-    return t;
+    t
 }
 
 fn bin_string_to_i32(bin_string: String) -> i32 {
