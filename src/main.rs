@@ -11,7 +11,6 @@ mod nixbpe;
 mod parse_utils;
 
 fn main() {
-    
     let args: Vec<String> = env::args().collect();
     if args.len() != 2 {
         panic!("Usage: ./sic_xe_assembler <filename>")
@@ -23,7 +22,6 @@ fn main() {
     let mut loc = 0;
     let mut loc_inc = 0;
     let mut asm_lines: Vec<ASMLine> = Vec::new();
-
     //PASS 1
     for line in lines.into_iter().enumerate().map(|line| (line.0 + 1, line.1.expect("Couldn't read line"))) {
         let line_parts = line.1.split(' ').collect::<Vec<&str>>();
@@ -72,7 +70,6 @@ fn main() {
         };
         asm_lines.push(asm_line);
     }
-
     //PASS 2
     let mut base = 0;
     let mut pc = 0;
