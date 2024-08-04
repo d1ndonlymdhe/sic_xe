@@ -1,34 +1,59 @@
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::env;
-
+use std::{env, panic};
+use crate::batch::batch_mode;
 use crate::global_map::*;
+use crate::interactive::interactive_mode;
 use crate::parse_utils::*;
 
 mod utils;
 mod global_map;
 mod nixbpe;
 mod parse_utils;
+mod interactive;
+mod batch;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() != 2 {
-        panic!("Usage: ./sic_xe_assembler <filename>")
+        panic!("Usage: ./sic_xe_assembler <filename>||-i")
     }
     let filename = &args[1];
+    let lines = if filename == "-i" {
+        interactive_mode()
+    } else {
+        batch_mode(filename)
+    };
     let mut global_map = GlobalMap::init();
-    let file = File::open(filename).expect("Unable to open file");
-    let lines = BufReader::new(file).lines();
     let mut loc = 0;
     let mut loc_inc = 0;
     let mut asm_lines: Vec<ASMLine> = Vec::new();
+    let mut start: usize = 0;
     //PASS 1
-    for line in lines.into_iter().enumerate().map(|line| (line.0 + 1, line.1.expect("Couldn't read line"))) {
+    for line in lines.into_iter().enumerate().map(|line| (line.0 + 1, line.1)) {
         let line_parts = line.1.split(' ').collect::<Vec<&str>>();
-        let label = line_parts[0];
-        let opcode = line_parts[1];
-        let address = line_parts[2];
-
+        let label: &str;
+        let opcode: &str;
+        let address: &str;
+        if line_parts.len() >= 3 {
+            label = line_parts[0];
+            opcode = line_parts[1];
+            address = line_parts[2];
+        } else if line_parts.len() == 2 {
+            let t = line_parts[0];
+            if panic::catch_unwind(|| parse_opcode(&global_map, t.to_string())).is_ok()
+            {
+                label = "";
+                opcode = t;
+                address = line_parts[1];
+            } else {
+                label = t;
+                opcode = line_parts[1];
+                address = "";
+            }
+        } else {
+            label = "";
+            opcode = line_parts[0];
+            address = "";
+        }
         let address_spec = if !address.is_empty() {
             parse_address(&global_map, address.to_string())
         } else {
@@ -45,6 +70,7 @@ fn main() {
                 if directive == "START" {
                     if let AddressSpec::Address(address, _) = &address_spec {
                         loc = *address;
+                        start = *address;
                         if !label.is_empty() {
                             global_map.label_map.insert(label.to_string(), loc);
                         }
@@ -72,7 +98,7 @@ fn main() {
     }
     //PASS 2
     let mut base = 0;
-    let mut pc = 0;
+    let mut pc = start;
 
     for line in asm_lines.iter().take(asm_lines.len() - 1).enumerate() {
         let idx = line.0;

@@ -93,7 +93,7 @@ pub fn get_loc_inc(opcode_spec: &OpcodeSpec, address_specs: &AddressSpec) -> usi
                     match address_specs {
                         AddressSpec::Constant(constant) => {
                             match constant {
-                                Constant::String(string) => {
+                                Constant::SicString(string) => {
                                     string.len()
                                 }
                                 Constant::Hex(val) => i32_to_hex_string(*val, 0).len().div_ceil(2)
@@ -181,7 +181,7 @@ pub fn parse_address(global_map: &GlobalMap, address: String) -> AddressSpec {
 pub fn parse_constant(qualifier: char, constant: String) -> Constant {
     match qualifier {
         'X' => Constant::Hex(hex_string_to_i32(constant)),
-        'C' => Constant::String(constant),
+        'C' => Constant::SicString(constant),
         _ => panic!("Invalid constant {}", constant)
     }
 }
@@ -228,7 +228,7 @@ pub fn get_object_code(base: usize, pc: usize, global_map: &GlobalMap, asm_line:
         }
     };
     let is_extended = matches!(opcode_spec, OpcodeSpec::Opcode(_, OpcodeFormat::Four));
-
+    let is_directive = matches!(opcode_spec, OpcodeSpec::Directive(_));
     match address_spec {
         AddressSpec::Address(address, addressing_mode) => {
             address_code = i32_to_bin_string(*address as i32, address_len);
@@ -252,26 +252,31 @@ pub fn get_object_code(base: usize, pc: usize, global_map: &GlobalMap, asm_line:
         }
         AddressSpec::Label(label, addressing_mode) => {
             let label_loc = global_map.label_map.get(label).unwrap_or_else(|| panic!("Invalid label {}", label));
-            if !is_extended {
-                let mut disp = *label_loc as i32 - pc as i32;
-                if (-2048..=2047).contains(&disp) {
-                    nixbpe.set_pc_relative();
-                    if disp < 0 {
-                        disp += 4096;
-                    }
-                } else {
-                    disp = *label_loc as i32 - base as i32;
-                    if (0..4096).contains(&disp) {
-                        nixbpe.set_base_relative();
-                        disp = *label_loc as i32 - base as i32;
+            if !is_directive {
+                if !is_extended {
+                    let mut disp = *label_loc as i32 - pc as i32;
+                    if (-2048..=2047).contains(&disp) {
+                        nixbpe.set_pc_relative();
+                        if disp < 0 {
+                            disp += 4096;
+                        }
                     } else {
-                        panic!("Displacement  out of bounds")
+                        disp = *label_loc as i32 - base as i32;
+                        if (0..4096).contains(&disp) {
+                            nixbpe.set_base_relative();
+                            disp = *label_loc as i32 - base as i32;
+                        } else {
+                            panic!("Displacement  out of bounds")
+                        }
                     }
+                    address_code = i32_to_bin_string(disp, 12);
+                } else {
+                    address_code = i32_to_bin_string(*label_loc as i32, 20);
                 }
-                address_code = i32_to_bin_string(disp, 12);
             } else {
-                address_code = i32_to_bin_string(*label_loc as i32, 20);
+                address_code = i32_to_bin_string(*label_loc as i32, 12);
             }
+
             match addressing_mode {
                 AddressingModes::None => {
                     nixbpe.set_direct();
@@ -296,7 +301,7 @@ pub fn get_object_code(base: usize, pc: usize, global_map: &GlobalMap, asm_line:
         }
         AddressSpec::Constant(constant) => {
             address_code = match constant {
-                Constant::String(string) => {
+                Constant::SicString(string) => {
                     string.as_bytes().iter().fold(String::new(), |acc, e| acc + i32_to_hex_string(*e as i32, 2).as_str())
                 }
                 Constant::Hex(hex) => {

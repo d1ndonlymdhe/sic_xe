@@ -14,7 +14,7 @@ impl OpcodeDetail {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Constant {
-    String(String),
+    SicString(String),
     Hex(i32),
 }
 
