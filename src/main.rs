@@ -22,11 +22,12 @@ fn main() {
     } else {
         batch_mode(filename)
     };
+
     let mut global_map = GlobalMap::init();
     let mut loc = 0;
     let mut loc_inc = 0;
     let mut asm_lines: Vec<ASMLine> = Vec::new();
-    let mut start: usize = 0;
+    // let mut start: usize = 0;
     //PASS 1
     for line in lines.into_iter().enumerate().map(|line| (line.0 + 1, line.1)) {
         let line_parts = line.1.split(' ').collect::<Vec<&str>>();
@@ -70,7 +71,7 @@ fn main() {
                 if directive == "START" {
                     if let AddressSpec::Address(address, _) = &address_spec {
                         loc = *address;
-                        start = *address;
+                        // start = *address;
                         if !label.is_empty() {
                             global_map.label_map.insert(label.to_string(), loc);
                         }
@@ -82,6 +83,19 @@ fn main() {
                 panic!("First line should be a START")
             }
         } else {
+            if let OpcodeSpec::Directive(directive) = &opcode_spec{
+                if directive == "LTORG" {
+                    global_map.literal_pool = Vec::new();
+                    for lit in &global_map.literal_pool {
+                        global_map.literal_map.insert(lit.clone(),loc);
+                        loc += lit.get_len();
+                    }
+                }
+            }
+            if let AddressSpec::Literal(literal) = &address_spec{
+                global_map.literal_pool.push(literal.clone());
+            }
+
             loc_inc = get_loc_inc(&opcode_spec, &address_spec);
             if !label.is_empty() {
                 global_map.label_map.insert(label.to_string(), loc);
@@ -96,14 +110,20 @@ fn main() {
         };
         asm_lines.push(asm_line);
     }
+
+    for asm in asm_lines.clone(){
+        println!("{:#?}",asm);
+    }
+
     //PASS 2
     let mut base = 0;
-    let mut pc = start;
+    let mut pc = 0;
 
     for line in asm_lines.iter().take(asm_lines.len() - 1).enumerate() {
         let idx = line.0;
         let line = line.1;
-        let (object_code, new_base, new_pc) = get_object_code(base, pc, &global_map, line);
+        let ret = get_object_code(base, pc, &global_map, line);
+        let (object_code, new_base, new_pc) = ret;
         base = new_base;
         pc = new_pc;
         match &object_code {
