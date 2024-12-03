@@ -42,3 +42,50 @@ pub fn get_nth_char(word: impl Into<String>, n: usize) -> Result<char, String> {
         Ok(as_vec[n - 1])
     }
 }
+
+pub fn substring(string: impl Into<String>, start: usize, end: usize) -> Result<String, String> {
+    let string = string.into();
+    if start > end || end > string.len() {
+        return Err(String::from("Invalid indices"));
+    }
+    Ok(string.chars().skip(start).take(end - start).collect())
+}
+
+
+#[derive(Debug)]
+pub struct Stack<T>
+where
+    T: Clone,
+{
+    pub data: Vec<T>,
+}
+impl<T> Stack<T>
+where
+    T: Clone,
+{
+    pub fn new() -> Self {
+        Self { data: Vec::new() }
+    }
+    pub fn push(&mut self, element: T) {
+        self.data.push(element)
+    }
+    pub fn is_empty(&self) -> bool {
+        self.data.len() == 0
+    }
+    pub fn pop(&mut self) -> Option<T> {
+        if self.is_empty() {
+            None
+        } else {
+            let v = self.data[self.data.len() - 1].clone();
+            self.data.pop();
+            Some(v)
+        }
+    }
+    pub fn peek(&self) -> Option<T> {
+        if self.is_empty() {
+            None
+        } else {
+            Some(self.data[self.data.len() - 1].clone())
+        }
+    }
+}

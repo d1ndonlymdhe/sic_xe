@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use crate::new_parser::StringOrNum;
 use crate::parse_utils::OpcodeFormat;
 use crate::utils::i32_to_hex_string;
 
@@ -17,15 +18,15 @@ impl OpcodeDetail {
 pub enum Constant {
     SicString(String),
     Hex(i32),
+    CurrentLOC,
 }
 
 impl Constant {
     pub fn get_len(&self) -> usize {
         match self {
-            Constant::SicString(string) => {
-                string.len()
-            }
-            Constant::Hex(val) => i32_to_hex_string(*val, 0).len().div_ceil(2)
+            Constant::SicString(string) => string.len(),
+            Constant::Hex(val) => i32_to_hex_string(*val, 0).len().div_ceil(2),
+            Constant::CurrentLOC => 3
         }
     }
 }
@@ -39,6 +40,7 @@ pub struct GlobalMap {
     pub constant_map: HashMap<String, Constant>,
     pub literal_pool: Vec<Constant>,
     pub literal_map: HashMap<Constant, usize>,
+    pub new_lit_pool: Vec<StringOrNum>,
 }
 
 impl GlobalMap {
@@ -50,6 +52,7 @@ impl GlobalMap {
             constant_map: HashMap::new(),
             literal_pool: Vec::new(),
             literal_map: HashMap::new(),
+            new_lit_pool: Vec::new(),
         };
 
         let codes: Vec<(&'static str, OpcodeDetail)> = vec![

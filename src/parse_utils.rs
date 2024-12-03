@@ -40,7 +40,7 @@ pub struct ASMLine {
 }
 
 pub fn parse_opcode(global_map: &GlobalMap, opcode: String) -> OpcodeSpec {
-    let is_directive = matches!(opcode.as_str(), "BASE" | "START" | "RESW" | "RESB" | "WORD" | "BYTE" |"END" | "LTORG");
+    let is_directive = matches!(opcode.as_str(), "BASE" | "START" | "RESW" | "RESB" | "WORD" | "BYTE" |"END" | "LTORG" | "EQU" | "USE");
     if is_directive {
         OpcodeSpec::Directive(opcode)
     } else {
@@ -99,7 +99,10 @@ pub fn get_loc_inc(opcode_spec: &OpcodeSpec, address_specs: &AddressSpec) -> usi
                 }
                 "END" => 0,
                 "LTORG" => {
-                    panic!("Handle LTORG outside");
+                    0
+                }
+                "EQU" => {
+                    0
                 }
                 _ => panic!("Unknown directive {}", directive)
             }
@@ -145,9 +148,11 @@ pub fn parse_address(global_map: &GlobalMap, address: String) -> AddressSpec {
         let third_char = if address_as_vec.len() > 2 { address_as_vec[2] } else { ' ' };
         let last_char = address_as_vec[address_as_vec.len() - 1];
         let mut address = comma_splitter_address[0].to_string();
-        //TODO logic for literals
+        if address == "*" {
+            return AddressSpec::Literal(Constant::CurrentLOC);
+        }
         if first_char == '=' {
-            if second_char != 'X' && first_char != 'C' {
+            if second_char != 'X' && second_char != 'C' {
                 panic!("Invalid literal {}", address)
             }
             if third_char != '\'' && last_char != '\'' {
@@ -198,8 +203,8 @@ fn label_or_address(global_map: &GlobalMap, address: &String, addressing_modes: 
 pub fn get_object_code(base: usize, pc: usize, global_map: &GlobalMap, asm_line: &ASMLine) -> (Option<String>, usize, usize) {
     let opcode_spec = &asm_line.opcode_spec;
     let address_spec = &asm_line.address_spec;
-    let pc = pc + get_loc_inc(opcode_spec, address_spec);
-    println!("PC = {}",pc);
+    let new_pc = pc + get_loc_inc(opcode_spec, address_spec);
+    println!("PC = {}", new_pc);
     let mut base = base;
     let mut nixbpe = Nixbpe::new();
     let opcode_code: String;
@@ -252,7 +257,7 @@ pub fn get_object_code(base: usize, pc: usize, global_map: &GlobalMap, asm_line:
             let label_loc = global_map.label_map.get(label).unwrap_or_else(|| panic!("Invalid label {}", label));
             if !is_directive {
                 if !is_extended {
-                    let mut disp = *label_loc as i32 - pc as i32;
+                    let mut disp = *label_loc as i32 - new_pc as i32;
                     if (-2048..=2047).contains(&disp) {
                         nixbpe.set_pc_relative();
                         if disp < 0 {
@@ -296,8 +301,34 @@ pub fn get_object_code(base: usize, pc: usize, global_map: &GlobalMap, asm_line:
                 }
             }
         }
-        AddressSpec::Literal(_) => {
-            todo!("Add literal logic")
+        AddressSpec::Literal(lit) => {
+            let lit_loc = global_map.literal_map.get(lit).unwrap_or_else(||{panic!("Unknown literal {:#?}",lit)});
+            if !is_directive {
+                if !is_extended {
+                    let mut disp = *lit_loc as i32 - new_pc as i32;
+                    if (-2048..=2047).contains(&disp) {
+                        nixbpe.set_pc_relative();
+                        if disp < 0 {
+                            disp += 4096;
+                        }
+                    } else {
+                        disp = *lit_loc as i32 - base as i32;
+                        if (0..4096).contains(&disp) {
+                            nixbpe.set_base_relative();
+                            disp = *lit_loc as i32 - base as i32;
+                        } else if is_extended {
+                            disp = *lit_loc as i32;
+                        } else {
+                            panic!("Displacement  out of bounds")
+                        }
+                    }
+                    address_code = i32_to_bin_string(disp, 12);
+                } else {
+                    address_code = i32_to_bin_string(*lit_loc as i32, 20);
+                }
+            } else {
+                address_code = i32_to_bin_string(*lit_loc as i32, 12);
+            }
         }
         AddressSpec::Constant(constant) => {
             address_code = match constant {
@@ -312,6 +343,7 @@ pub fn get_object_code(base: usize, pc: usize, global_map: &GlobalMap, asm_line:
                         t
                     }
                 }
+                Constant::CurrentLOC => i32_to_bin_string(pc as i32,6)
             }
         }
     }
@@ -321,21 +353,21 @@ pub fn get_object_code(base: usize, pc: usize, global_map: &GlobalMap, asm_line:
             if directive == "BASE" {
                 if let AddressSpec::Label(label, _) = address_spec {
                     base = *global_map.label_map.get(label).unwrap_or_else(|| panic!("Invalid label {}", label));
-                    return (None, base, pc);
+                    return (None, base, new_pc);
                 } else if let AddressSpec::Address(address, _) = address_spec {
                     base = *address;
-                    return (None, base, pc);
+                    return (None, base, new_pc);
                 }
                 panic!("provide label or address for base")
             }
             if directive == "BYTE" {
-                return (Some(address_code), base, pc);
+                return (Some(address_code), base, new_pc);
             }
             if directive == "WORD" {
-                return (Some(i32_to_hex_string(bin_string_to_i32(address_code), 6)), base, pc);
+                return (Some(i32_to_hex_string(bin_string_to_i32(address_code), 6)), base, new_pc);
             }
 
-            (None, base, pc)
+            (None, base, new_pc)
         }
         OpcodeSpec::Opcode(opcode, format) => {
             let opcode_detail = global_map.get_opcode_value(opcode);
@@ -345,18 +377,18 @@ pub fn get_object_code(base: usize, pc: usize, global_map: &GlobalMap, asm_line:
                     nixbpe.set_extended();
                     opcode_code = i32_to_bin_string((opcode >> 2) as i32, 6);
                     let object_code = i32_to_hex_string(bin_string_to_i32(opcode_code + nixbpe.as_bin_string().as_str() + &*address_code), code_len / 4);
-                    (Some(object_code), base, pc)
+                    (Some(object_code), base, new_pc)
                 }
                 OpcodeFormat::Three => {
                     opcode_code = i32_to_bin_string((opcode >> 2) as i32, 6);
                     let object_code = i32_to_hex_string(bin_string_to_i32(opcode_code + nixbpe.as_bin_string().as_str() + &*address_code), code_len / 4);
-                    (Some(object_code), base, pc)
+                    (Some(object_code), base, new_pc)
                 }
                 OpcodeFormat::Two => {
-                    (Some((i32_to_hex_string(opcode as i32, 2)) + i32_to_hex_string(bin_string_to_i32(address_code), 2).as_str()), base, pc)
+                    (Some((i32_to_hex_string(opcode as i32, 2)) + i32_to_hex_string(bin_string_to_i32(address_code), 2).as_str()), base, new_pc)
                 }
                 OpcodeFormat::One => {
-                    (Some(i32_to_hex_string(opcode as i32, 2)), base, pc)
+                    (Some(i32_to_hex_string(opcode as i32, 2)), base, new_pc)
                 }
             }
         }

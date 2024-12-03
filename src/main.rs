@@ -2,6 +2,7 @@ use std::{env, panic};
 use crate::batch::batch_mode;
 use crate::global_map::*;
 use crate::interactive::interactive_mode;
+use crate::new_parser::Parser;
 use crate::parse_utils::*;
 
 mod utils;
@@ -10,6 +11,7 @@ mod nixbpe;
 mod parse_utils;
 mod interactive;
 mod batch;
+mod new_parser;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -27,6 +29,13 @@ fn main() {
     let mut loc = 0;
     let mut loc_inc = 0;
     let mut asm_lines: Vec<ASMLine> = Vec::new();
+
+
+    for line in lines.into_iter() {
+        let x = Parser::parse_asm_line(&mut global_map, line);
+        // println!("{:#?}",x)
+    }
+    return;
     // let mut start: usize = 0;
     //PASS 1
     for line in lines.into_iter().enumerate().map(|line| (line.0 + 1, line.1)) {
@@ -83,18 +92,23 @@ fn main() {
                 panic!("First line should be a START")
             }
         } else {
-            if let OpcodeSpec::Directive(directive) = &opcode_spec{
-                if directive == "LTORG" {
-                    global_map.literal_pool = Vec::new();
-                    for lit in &global_map.literal_pool {
-                        global_map.literal_map.insert(lit.clone(),loc);
-                        loc += lit.get_len();
+            if let OpcodeSpec::Directive(directive) = &opcode_spec {
+                match directive.as_str() {
+                    "LTORG" => {
+                        global_map.literal_pool = Vec::new();
+                        for lit in &global_map.literal_pool {
+                            global_map.literal_map.insert(lit.clone(), loc);
+                            loc += lit.get_len();
+                        }
                     }
+                    "EQU" => {}
+                    _ => {}
                 }
             }
-            if let AddressSpec::Literal(literal) = &address_spec{
+            if let AddressSpec::Literal(literal) = &address_spec {
                 global_map.literal_pool.push(literal.clone());
             }
+
 
             loc_inc = get_loc_inc(&opcode_spec, &address_spec);
             if !label.is_empty() {
@@ -111,8 +125,8 @@ fn main() {
         asm_lines.push(asm_line);
     }
 
-    for asm in asm_lines.clone(){
-        println!("{:#?}",asm);
+    for asm in asm_lines.clone() {
+        println!("{:#?}", asm);
     }
 
     //PASS 2
